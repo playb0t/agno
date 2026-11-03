@@ -9,7 +9,7 @@ on, an Authorization header sourced from an env var so the token stays out of ar
 
     "agno": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "<url>", "--header", "Authorization:${AGNO_AUTH_HEADER}"],
+      "args": ["-y", "mcp-remote@0.16.0", "<url>", "--header", "Authorization:${AGNO_AUTH_HEADER}"],
       "env": {"AGNO_AUTH_HEADER": "Bearer <token>"}
     }
 
@@ -159,7 +159,7 @@ class ClaudeDesktopAdapter(ClientAdapter):
         return RemoveResult(removed=True, location=str(self.config_path))
 
     def write(self, server_name: str, url: str, token: Optional[str]) -> WriteResult:
-        args: List[str] = ["-y", "mcp-remote", url]
+        args: List[str] = ["-y", "mcp-remote@0.16.0", url]
         entry: Dict[str, Any] = {"command": "npx", "args": args}
         if token:
             args += ["--header", "Authorization:${" + AUTH_ENV_VAR + "}"]

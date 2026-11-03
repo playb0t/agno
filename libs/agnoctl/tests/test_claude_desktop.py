@@ -31,7 +31,7 @@ def test_write_creates_mcp_remote_bridge(tmp_path: Path):
     entry = json.loads(adapter.config_path.read_text())["mcpServers"]["agno"]
     assert entry["command"] == "npx"
     # URL is bridged as a positional arg; the token rides an env var, not argv.
-    assert entry["args"][:3] == ["-y", "mcp-remote", URL]
+    assert entry["args"][:3] == ["-y", "mcp-remote@0.16.0", URL]
     assert entry["args"][-2:] == ["--header", "Authorization:${AGNO_AUTH_HEADER}"]
     assert entry["env"]["AGNO_AUTH_HEADER"] == "Bearer " + TOKEN
     assert (adapter.config_path.stat().st_mode & 0o777) == 0o600
@@ -41,7 +41,7 @@ def test_write_without_token_omits_header_and_env(tmp_path: Path):
     adapter = _adapter(tmp_path)
     adapter.write("agno", URL, None)
     entry = json.loads(adapter.config_path.read_text())["mcpServers"]["agno"]
-    assert entry["args"] == ["-y", "mcp-remote", URL]
+    assert entry["args"] == ["-y", "mcp-remote@0.16.0", URL]
     assert "env" not in entry
     assert "--header" not in entry["args"]
 
@@ -183,6 +183,7 @@ def test_connect_configures_claude_desktop_end_to_end(monkeypatch, fake_os, tmp_
     assert payload["results"][0]["verify"]["ok"] is True
 
     entry = json.loads(cfg.read_text())["mcpServers"]["agentos"]
+    assert entry["args"][:3] == ["-y", "mcp-remote@0.16.0", "http://localhost:7777/mcp"]
     assert entry["env"]["AGNO_AUTH_HEADER"].startswith("Bearer agno_pat_")
     # The minted token never leaks into the JSON report.
     assert fake_os.accounts["claude-desktop"]["token"] not in result.output
