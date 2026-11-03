@@ -37,12 +37,12 @@ def test_write_creates_mcp_remote_bridge(tmp_path: Path):
     assert (adapter.config_path.stat().st_mode & 0o777) == 0o600
 
 
-def test_write_without_token_omits_header_and_env(tmp_path: Path):
+def test_write_without_token_omits_auth_header(tmp_path: Path):
     adapter = _adapter(tmp_path)
     adapter.write("agno", URL, None)
     entry = json.loads(adapter.config_path.read_text())["mcpServers"]["agno"]
     assert entry["args"] == ["-y", "mcp-remote", URL]
-    assert "env" not in entry
+    assert set(entry["env"]) == {"MCP_REMOTE_CONFIG_DIR"}
     assert "--header" not in entry["args"]
 
 
@@ -186,3 +186,49 @@ def test_connect_configures_claude_desktop_end_to_end(monkeypatch, fake_os, tmp_
     assert entry["env"]["AGNO_AUTH_HEADER"].startswith("Bearer agno_pat_")
     # The minted token never leaks into the JSON report.
     assert fake_os.accounts["claude-desktop"]["token"] not in result.output
+
+
+@pytest.mark.parametrize("token", [None, TOKEN])
+def test_write_assigns_distinct_absolute_cache_directories(tmp_path: Path, token):
+    adapter = _adapter(tmp_path)
+    names = ["first", "second", "../outside", "FIRST", "日本語"]
+    for name in names:
+        adapter.write(name, URL, token)
+    entries = json.loads(adapter.config_path.read_text())["mcpServers"]
+    paths = [Path(entries[name]["env"]["MCP_REMOTE_CONFIG_DIR"]) for name in names]
+    assert len(set(paths)) == len(names)
+    for path in paths:
+        assert path.is_absolute()
+        assert path.parent == adapter.config_path.resolve().parent / ".agnoctl-mcp-remote"
+        assert len(path.name) == 64
+        assert set(path.name) <= set("0123456789abcdef")
+
+
+def test_write_keeps_cache_directory_on_reconfiguration_and_restart(tmp_path: Path):
+    adapter = _adapter(tmp_path)
+    adapter.write("agno", URL, None)
+    first = json.loads(adapter.config_path.read_text())["mcpServers"]["agno"]
+    cache = Path(first["env"]["MCP_REMOTE_CONFIG_DIR"])
+    cache.mkdir(parents=True)
+    record = cache / "tokens.json"
+    record.write_text('{"access_token":"synthetic-token"}')
+
+    restarted = _adapter(tmp_path)
+    restarted.write("agno", "https://changed.example.test/mcp", TOKEN)
+    entry = json.loads(restarted.config_path.read_text())["mcpServers"]["agno"]
+    assert Path(entry["env"]["MCP_REMOTE_CONFIG_DIR"]) == cache
+    assert json.loads(record.read_text()) == {"access_token": "synthetic-token"}
+    assert entry["env"]["AGNO_AUTH_HEADER"] == "Bearer " + TOKEN
+    assert TOKEN not in json.dumps(entry["args"])
+
+
+def test_cache_directories_are_scoped_to_the_config_directory(tmp_path: Path):
+    first = _adapter(tmp_path)
+    other = ClaudeDesktopAdapter(home=tmp_path, config_path=tmp_path / "other" / "config.json")
+    first.write("agno", URL, None)
+    other.write("agno", URL, None)
+    paths = [
+        json.loads(adapter.config_path.read_text())["mcpServers"]["agno"]["env"]["MCP_REMOTE_CONFIG_DIR"]
+        for adapter in [first, other]
+    ]
+    assert paths[0] != paths[1]

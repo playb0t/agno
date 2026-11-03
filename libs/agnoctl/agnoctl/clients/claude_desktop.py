@@ -10,8 +10,11 @@ on, an Authorization header sourced from an env var so the token stays out of ar
     "agno": {
       "command": "npx",
       "args": ["-y", "mcp-remote", "<url>", "--header", "Authorization:${AGNO_AUTH_HEADER}"],
-      "env": {"AGNO_AUTH_HEADER": "Bearer <token>"}
+      "env": {"AGNO_AUTH_HEADER": "Bearer <token>", "MCP_REMOTE_CONFIG_DIR": "<entry-cache-directory>"}
     }
+
+Every written entry sets MCP_REMOTE_CONFIG_DIR to a name-derived directory beside the
+config file. Rewriting an entry keeps that directory, including for tokenless OAuth.
 
 Config path is per-OS (macOS Application Support, Windows APPDATA, Linux ~/.config).
 Because the bridge runs at Claude Desktop launch time, it needs Node/npx on PATH; connect
@@ -24,6 +27,7 @@ import os
 import re
 import shutil
 import sys
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -159,11 +163,16 @@ class ClaudeDesktopAdapter(ClientAdapter):
         return RemoveResult(removed=True, location=str(self.config_path))
 
     def write(self, server_name: str, url: str, token: Optional[str]) -> WriteResult:
+        # Entry names survive URL/token changes; hashing keeps arbitrary names inside this config directory.
+        cache_dir = (
+            self.config_path.resolve().parent / ".agnoctl-mcp-remote" / sha256(server_name.encode("utf-8")).hexdigest()
+        )
+        env = {"MCP_REMOTE_CONFIG_DIR": str(cache_dir)}
         args: List[str] = ["-y", "mcp-remote", url]
-        entry: Dict[str, Any] = {"command": "npx", "args": args}
+        entry: Dict[str, Any] = {"command": "npx", "args": args, "env": env}
         if token:
             args += ["--header", "Authorization:${" + AUTH_ENV_VAR + "}"]
-            entry["env"] = {AUTH_ENV_VAR: bearer_header(token)}
+            env[AUTH_ENV_VAR] = bearer_header(token)
         write_servers_entry(self.config_path, server_name, entry, secure=bool(token), mkdir=True)
 
         note = None
